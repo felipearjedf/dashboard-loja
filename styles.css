@@ -713,5 +713,49 @@ body.dark-mode .file-input {
 
   .table-wrap {
     max-height: calc(100vh - 430px);
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  table {
+    min-width: max-content;
+  }
+
+  th:first-child,
+  td:first-child {
+    min-width: 160px;
+  }
+
+  th:last-child,
+  td:last-child {
+    right: auto;
+    min-width: 120px;
+    box-shadow: none;
+  }
+
+  th:last-child {
+    z-index: 2;
+  }
+
+  td:last-child {
+    z-index: auto;
+  }
+
+  .total-row td:last-child {
+    right: auto;
+    z-index: 4;
+  }
+
+  .cell-input {
+    min-width: 78px;
+    padding: 0 8px;
+  }
+
+  .category-input {
+    min-width: 128px;
+  }
+
+  .category-cell {
+    grid-template-columns: minmax(120px, 1fr) 28px;
   }
 }
