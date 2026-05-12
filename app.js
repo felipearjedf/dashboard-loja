@@ -62,6 +62,10 @@ let cloudReady = false;
 let cloudSaveTimer = null;
 let supabaseClient = createSupabaseClient();
 const cloudRecordId = window.SUPABASE_CONFIG?.recordId || "loja-principal";
+const undoStack = [];
+let editSnapshot = null;
+let selectedRange = null;
+let lastSelectedCell = null;
 
 applySavedTheme();
 let state;
@@ -89,6 +93,7 @@ const elements = {
   sheetTitle: document.querySelector("#sheetTitle"),
   sheetType: document.querySelector("#sheetType"),
   themeToggleButton: document.querySelector("#themeToggleButton"),
+  undoButton: document.querySelector("#undoButton"),
   yearSelect: document.querySelector("#yearSelect"),
   yearlyTotalsBody: document.querySelector("#yearlyTotalsBody")
 };
@@ -244,9 +249,6 @@ function getSheet(source, ledger, year, month) {
   while (sheet.values.length < sheet.categories.length) sheet.values.push({});
   if (!Array.isArray(sheet.notes)) sheet.notes = [];
   while (sheet.notes.length < sheet.categories.length) sheet.notes.push({});
-  while (sheet.categories.length < 10) sheet.categories.push(`Linha ${sheet.categories.length + 1}`);
-  while (sheet.values.length < 10) sheet.values.push({});
-  while (sheet.notes.length < sheet.categories.length) sheet.notes.push({});
   return sheet;
 }
 
@@ -328,6 +330,44 @@ async function pushCloudState() {
   return true;
 }
 
+function cloneState() {
+  return JSON.parse(JSON.stringify(state));
+}
+
+function pushUndoSnapshot() {
+  undoStack.push(cloneState());
+  if (undoStack.length > 50) undoStack.shift();
+  updateUndoButton();
+}
+
+function updateUndoButton() {
+  if (elements.undoButton) elements.undoButton.disabled = undoStack.length === 0;
+}
+
+function undoLastChange() {
+  const previous = undoStack.pop();
+  if (!previous) return;
+  state = ensureShape(previous);
+  localStorage.setItem(storeKey, JSON.stringify(state));
+  queueCloudSave();
+  render();
+  elements.saveStatus.textContent = "Alteracao desfeita.";
+}
+
+function beginEdit() {
+  if (!editSnapshot) editSnapshot = cloneState();
+}
+
+function finishEdit() {
+  if (!editSnapshot) return;
+  if (JSON.stringify(editSnapshot) !== JSON.stringify(state)) {
+    undoStack.push(editSnapshot);
+    if (undoStack.length > 50) undoStack.shift();
+    updateUndoButton();
+  }
+  editSnapshot = null;
+}
+
 function parseValue(value) {
   if (typeof value === "number") return Number.isFinite(value) ? value : 0;
   if (!value) return 0;
@@ -370,6 +410,7 @@ function render() {
   renderTable();
   renderSummary();
   renderYearlyTotals();
+  updateUndoButton();
 }
 
 function renderYearSelect() {
@@ -421,6 +462,8 @@ function renderTable() {
           <td>
             <div class="category-cell">
               <input class="category-input" aria-label="Nome da linha ${rowIndex + 1}" data-category-row="${rowIndex}" value="${escapeHtml(category)}" />
+              <button class="row-action-button" type="button" data-move-row="${rowIndex}" data-direction="-1" aria-label="Mover linha ${rowIndex + 1} para cima" ${rowIndex === 0 ? "disabled" : ""}>↑</button>
+              <button class="row-action-button" type="button" data-move-row="${rowIndex}" data-direction="1" aria-label="Mover linha ${rowIndex + 1} para baixo" ${rowIndex === sheet.categories.length - 1 ? "disabled" : ""}>↓</button>
               <button class="delete-row-button" type="button" data-delete-row="${rowIndex}" aria-label="Excluir linha ${rowIndex + 1}">x</button>
             </div>
           </td>
@@ -615,6 +658,7 @@ function setCategoryName(rowIndex, value) {
 }
 
 function addRowAtEnd() {
+  pushUndoSnapshot();
   if (state.currentLedger === "income" || state.currentLedger === "fixed") {
     state.years.forEach((year) => {
       for (let month = 0; month < 12; month += 1) {
@@ -639,24 +683,136 @@ function addRowAtEnd() {
 function deleteRow(rowIndex) {
   const sheet = getSheet(state, state.currentLedger, state.currentYear, state.currentMonth);
   const rowName = sheet.categories[rowIndex] || `linha ${rowIndex + 1}`;
-  const confirmed = window.confirm(`Excluir "${rowName}"? Os valores dessa linha tambem serao apagados.`);
+  const confirmed = window.confirm(`Tem certeza que deseja excluir "${rowName}"? Os valores dessa linha serao apagados e sao irrecuperaveis.`);
   if (!confirmed) return;
+  pushUndoSnapshot();
 
   if (state.currentLedger === "income" || state.currentLedger === "fixed") {
     state.years.forEach((year) => {
       for (let month = 0; month < 12; month += 1) {
         const targetSheet = getSheet(state, state.currentLedger, year, month);
-        if (targetSheet.categories.length <= 1) return;
         targetSheet.categories.splice(rowIndex, 1);
         targetSheet.values.splice(rowIndex, 1);
         targetSheet.notes.splice(rowIndex, 1);
       }
     });
-  } else if (sheet.categories.length > 1) {
+  } else {
     sheet.categories.splice(rowIndex, 1);
     sheet.values.splice(rowIndex, 1);
     sheet.notes.splice(rowIndex, 1);
   }
+
+  saveState();
+  render();
+}
+
+function moveRow(rowIndex, direction) {
+  const targetIndex = rowIndex + direction;
+  const sheet = getSheet(state, state.currentLedger, state.currentYear, state.currentMonth);
+  if (targetIndex < 0 || targetIndex >= sheet.categories.length) return;
+  pushUndoSnapshot();
+
+  if (state.currentLedger === "income" || state.currentLedger === "fixed") {
+    state.years.forEach((year) => {
+      for (let month = 0; month < 12; month += 1) {
+        moveRowInSheet(getSheet(state, state.currentLedger, year, month), rowIndex, targetIndex);
+      }
+    });
+  } else {
+    moveRowInSheet(sheet, rowIndex, targetIndex);
+  }
+
+  saveState();
+  render();
+}
+
+function moveRowInSheet(sheet, from, to) {
+  ["categories", "values", "notes"].forEach((key) => {
+    const list = sheet[key];
+    const [item] = list.splice(from, 1);
+    list.splice(to, 0, item);
+  });
+}
+
+function selectCell(input, extend = false) {
+  const row = Number(input.dataset.row);
+  const day = Number(input.dataset.day);
+  if (extend && lastSelectedCell) {
+    selectedRange = {
+      startRow: Math.min(lastSelectedCell.row, row),
+      endRow: Math.max(lastSelectedCell.row, row),
+      startDay: Math.min(lastSelectedCell.day, day),
+      endDay: Math.max(lastSelectedCell.day, day)
+    };
+  } else {
+    selectedRange = { startRow: row, endRow: row, startDay: day, endDay: day };
+    lastSelectedCell = { row, day };
+  }
+  paintSelection();
+}
+
+function paintSelection() {
+  elements.dataTable.querySelectorAll(".cell-input").forEach((input) => {
+    const row = Number(input.dataset.row);
+    const day = Number(input.dataset.day);
+    const selected =
+      selectedRange &&
+      row >= selectedRange.startRow &&
+      row <= selectedRange.endRow &&
+      day >= selectedRange.startDay &&
+      day <= selectedRange.endDay;
+    input.classList.toggle("cell-selected", selected);
+  });
+}
+
+function getSelectedText() {
+  if (!selectedRange) return "";
+  const sheet = getSheet(state, state.currentLedger, state.currentYear, state.currentMonth);
+  const rows = [];
+  for (let row = selectedRange.startRow; row <= selectedRange.endRow; row += 1) {
+    const cells = [];
+    for (let day = selectedRange.startDay; day <= selectedRange.endDay; day += 1) {
+      cells.push(getCellDisplayValue(sheet, state.currentLedger, row, day));
+    }
+    rows.push(cells.join("\t"));
+  }
+  return rows.join("\n");
+}
+
+async function copySelectedCells(event) {
+  if (!selectedRange) return;
+  const text = getSelectedText();
+  if (!text) return;
+  event.preventDefault();
+  if (event.clipboardData) event.clipboardData.setData("text/plain", text);
+  else if (navigator.clipboard) await navigator.clipboard.writeText(text);
+}
+
+function pasteCells(event) {
+  const active = document.activeElement;
+  if (!active?.matches?.(".cell-input")) return;
+  const text = event.clipboardData?.getData("text/plain");
+  if (!text || !text.includes("\t") && !text.includes("\n")) return;
+  event.preventDefault();
+  editSnapshot = null;
+  pushUndoSnapshot();
+
+  const startRow = selectedRange?.startRow ?? Number(active.dataset.row);
+  const startDay = selectedRange?.startDay ?? Number(active.dataset.day);
+  const sheet = getSheet(state, state.currentLedger, state.currentYear, state.currentMonth);
+  const days = daysInMonth(state.currentYear, state.currentMonth);
+  const rows = text.replace(/\r/g, "").split("\n").filter((row) => row.length > 0).map((row) => row.split("\t"));
+
+  rows.forEach((cells, rowOffset) => {
+    const targetRow = startRow + rowOffset;
+    if (targetRow >= sheet.categories.length) return;
+    cells.forEach((cell, dayOffset) => {
+      const targetDay = startDay + dayOffset;
+      if (targetDay > days) return;
+      sheet.values[targetRow][targetDay] = parseValue(cell);
+      if (isDescriptiveLedger(state.currentLedger)) sheet.notes[targetRow][targetDay] = cell.trim();
+    });
+  });
 
   saveState();
   render();
@@ -938,6 +1094,7 @@ elements.exportButton.addEventListener("click", exportWorkbook);
 elements.saveButton.addEventListener("click", manualSave);
 elements.themeToggleButton.addEventListener("click", toggleTheme);
 elements.logoutButton.addEventListener("click", logout);
+elements.undoButton.addEventListener("click", undoLastChange);
 elements.applyImportButton.addEventListener("click", applyImport);
 elements.fileInput.addEventListener("change", (event) => readImport(event.target.files[0]));
 
@@ -967,6 +1124,17 @@ elements.dataTable.addEventListener("change", (event) => {
 });
 
 elements.dataTable.addEventListener("click", (event) => {
+  if (event.target.matches(".cell-input")) {
+    selectCell(event.target, event.shiftKey);
+    return;
+  }
+
+  const moveButton = event.target.closest("[data-move-row]");
+  if (moveButton) {
+    moveRow(Number(moveButton.dataset.moveRow), Number(moveButton.dataset.direction));
+    return;
+  }
+
   const deleteButton = event.target.closest("[data-delete-row]");
   if (deleteButton) {
     deleteRow(Number(deleteButton.dataset.deleteRow));
@@ -978,6 +1146,11 @@ elements.dataTable.addEventListener("click", (event) => {
   addRowAtEnd();
 });
 
+elements.dataTable.addEventListener("focusin", (event) => {
+  if (event.target.matches(".cell-input") || event.target.matches(".category-input")) beginEdit();
+  if (event.target.matches(".cell-input")) selectCell(event.target, false);
+});
+
 elements.dataTable.addEventListener("input", (event) => {
   if (event.target.matches(".cell-input")) saveCellDraft(event.target);
   if (event.target.matches(".category-input")) saveCategoryDraft(event.target);
@@ -986,10 +1159,16 @@ elements.dataTable.addEventListener("input", (event) => {
 elements.dataTable.addEventListener(
   "focusout",
   (event) => {
-    if (event.target.matches(".cell-input") || event.target.matches(".category-input")) render();
+    if (event.target.matches(".cell-input") || event.target.matches(".category-input")) {
+      finishEdit();
+      render();
+    }
   },
   true
 );
+
+elements.dataTable.addEventListener("paste", pasteCells);
+document.addEventListener("copy", copySelectedCells);
 
 async function boot() {
   const allowed = await requireSession();
