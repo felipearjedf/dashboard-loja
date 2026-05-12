@@ -66,6 +66,8 @@ const undoStack = [];
 let editSnapshot = null;
 let selectedRange = null;
 let lastSelectedCell = null;
+let draggedRowIndex = null;
+let isSelectingCells = false;
 
 applySavedTheme();
 let state;
@@ -458,12 +460,11 @@ function renderTable() {
       }).join("");
 
       return `
-        <tr>
+        <tr draggable="true" data-row-index="${rowIndex}">
           <td>
             <div class="category-cell">
+              <button class="drag-row-button" type="button" draggable="true" data-drag-row="${rowIndex}" aria-label="Arrastar linha ${rowIndex + 1}" title="Arrastar linha"></button>
               <input class="category-input" aria-label="Nome da linha ${rowIndex + 1}" data-category-row="${rowIndex}" value="${escapeHtml(category)}" />
-              <button class="row-action-button" type="button" data-move-row="${rowIndex}" data-direction="-1" aria-label="Mover linha ${rowIndex + 1} para cima" ${rowIndex === 0 ? "disabled" : ""}>↑</button>
-              <button class="row-action-button" type="button" data-move-row="${rowIndex}" data-direction="1" aria-label="Mover linha ${rowIndex + 1} para baixo" ${rowIndex === sheet.categories.length - 1 ? "disabled" : ""}>↓</button>
               <button class="delete-row-button" type="button" data-delete-row="${rowIndex}" aria-label="Excluir linha ${rowIndex + 1}">x</button>
             </div>
           </td>
@@ -706,10 +707,10 @@ function deleteRow(rowIndex) {
   render();
 }
 
-function moveRow(rowIndex, direction) {
-  const targetIndex = rowIndex + direction;
+function moveRow(rowIndex, targetIndex) {
   const sheet = getSheet(state, state.currentLedger, state.currentYear, state.currentMonth);
   if (targetIndex < 0 || targetIndex >= sheet.categories.length) return;
+  if (rowIndex === targetIndex) return;
   pushUndoSnapshot();
 
   if (state.currentLedger === "income" || state.currentLedger === "fixed") {
@@ -734,6 +735,62 @@ function moveRowInSheet(sheet, from, to) {
   });
 }
 
+function getRowFromDragEvent(event) {
+  return event.target.closest("tr[data-row-index]");
+}
+
+function clearDragRows() {
+  elements.dataTable.querySelectorAll("tr.dragging-row, tr.drag-over-row").forEach((row) => {
+    row.classList.remove("dragging-row", "drag-over-row");
+  });
+}
+
+function clearDragOverRows() {
+  elements.dataTable.querySelectorAll("tr.drag-over-row").forEach((row) => {
+    row.classList.remove("drag-over-row");
+  });
+}
+
+function handleRowDragStart(event) {
+  const handle = event.target.closest("[data-drag-row]");
+  if (!handle) {
+    event.preventDefault();
+    return;
+  }
+
+  draggedRowIndex = Number(handle.dataset.dragRow);
+  const row = getRowFromDragEvent(event);
+  row?.classList.add("dragging-row");
+  event.dataTransfer.effectAllowed = "move";
+  event.dataTransfer.setData("text/plain", String(draggedRowIndex));
+}
+
+function handleRowDragOver(event) {
+  if (draggedRowIndex === null) return;
+  const row = getRowFromDragEvent(event);
+  if (!row) return;
+  event.preventDefault();
+  event.dataTransfer.dropEffect = "move";
+  clearDragOverRows();
+  row.classList.add("drag-over-row");
+}
+
+function handleRowDrop(event) {
+  if (draggedRowIndex === null) return;
+  const row = getRowFromDragEvent(event);
+  if (!row) return;
+  event.preventDefault();
+  const targetIndex = Number(row.dataset.rowIndex);
+  moveRow(draggedRowIndex, targetIndex);
+  draggedRowIndex = null;
+  clearDragRows();
+}
+
+function handleRowDragEnd() {
+  draggedRowIndex = null;
+  clearDragRows();
+}
+
 function selectCell(input, extend = false) {
   const row = Number(input.dataset.row);
   const day = Number(input.dataset.day);
@@ -749,6 +806,22 @@ function selectCell(input, extend = false) {
     lastSelectedCell = { row, day };
   }
   paintSelection();
+}
+
+function startCellSelection(input, event) {
+  if (event.button !== 0) return;
+  isSelectingCells = true;
+  selectCell(input, event.shiftKey);
+  input.focus({ preventScroll: true });
+}
+
+function extendCellSelection(input) {
+  if (!isSelectingCells) return;
+  selectCell(input, true);
+}
+
+function stopCellSelection() {
+  isSelectingCells = false;
 }
 
 function paintSelection() {
@@ -1163,12 +1236,6 @@ elements.dataTable.addEventListener("click", (event) => {
     return;
   }
 
-  const moveButton = event.target.closest("[data-move-row]");
-  if (moveButton) {
-    moveRow(Number(moveButton.dataset.moveRow), Number(moveButton.dataset.direction));
-    return;
-  }
-
   const deleteButton = event.target.closest("[data-delete-row]");
   if (deleteButton) {
     deleteRow(Number(deleteButton.dataset.deleteRow));
@@ -1179,6 +1246,21 @@ elements.dataTable.addEventListener("click", (event) => {
   if (!button) return;
   addRowAtEnd();
 });
+
+elements.dataTable.addEventListener("mousedown", (event) => {
+  if (event.target.matches(".cell-input")) startCellSelection(event.target, event);
+});
+
+elements.dataTable.addEventListener("mouseover", (event) => {
+  if (event.target.matches(".cell-input")) extendCellSelection(event.target);
+});
+
+document.addEventListener("mouseup", stopCellSelection);
+
+elements.dataTable.addEventListener("dragstart", handleRowDragStart);
+elements.dataTable.addEventListener("dragover", handleRowDragOver);
+elements.dataTable.addEventListener("drop", handleRowDrop);
+elements.dataTable.addEventListener("dragend", handleRowDragEnd);
 
 elements.dataTable.addEventListener("focusin", (event) => {
   if (event.target.matches(".cell-input") || event.target.matches(".category-input")) beginEdit();

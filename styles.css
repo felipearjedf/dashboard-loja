@@ -520,7 +520,7 @@ body.dark-mode th:last-child {
 
 .category-cell {
   display: grid;
-  grid-template-columns: 1fr repeat(3, 26px);
+  grid-template-columns: 26px minmax(120px, 1fr) 26px;
   gap: 4px;
   align-items: center;
   min-height: 40px;
@@ -569,6 +569,7 @@ body.dark-mode .add-row th {
   background: #14201c;
 }
 
+.drag-row-button,
 .row-action-button,
 .delete-row-button {
   display: grid;
@@ -585,6 +586,28 @@ body.dark-mode .add-row th {
   font-weight: 900;
 }
 
+.drag-row-button {
+  background-image: radial-gradient(currentColor 1.6px, transparent 1.7px);
+  background-position: 5px 5px;
+  background-size: 7px 7px;
+  cursor: grab;
+  touch-action: none;
+}
+
+.drag-row-button:active {
+  cursor: grabbing;
+}
+
+.dragging-row {
+  opacity: 0.45;
+}
+
+.drag-over-row td,
+.drag-over-row th {
+  box-shadow: inset 0 2px 0 var(--brand), inset 0 -2px 0 var(--brand);
+}
+
+.drag-row-button:hover,
 .row-action-button:hover {
   background: #e7eee9;
   color: var(--brand);
@@ -600,6 +623,7 @@ body.dark-mode .add-row th {
   color: var(--danger);
 }
 
+body.dark-mode .drag-row-button:hover,
 body.dark-mode .row-action-button:hover {
   background: #22302c;
   color: var(--brand);
@@ -619,6 +643,10 @@ body.dark-mode .delete-row-button:hover {
 .cell-input.cell-selected {
   background: #fff8df;
   box-shadow: inset 0 0 0 2px var(--brand);
+}
+
+.cell-input {
+  user-select: none;
 }
 
 body.dark-mode .cell-input:focus,
@@ -802,6 +830,6 @@ body.dark-mode .file-input {
   }
 
   .category-cell {
-    grid-template-columns: minmax(120px, 1fr) repeat(3, 26px);
+    grid-template-columns: 26px minmax(120px, 1fr) 26px;
   }
 }
