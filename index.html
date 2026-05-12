@@ -10,7 +10,7 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="supabase-config.js"></script>
   <script>
-    // TRAVA DE SEGURANÇA: Se não estiver logado, vai direto para o login
+    // BLOQUEIO: Se não houver sessão ativa, expulsa para o login imediatamente
     async function checkAuth() {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) {
@@ -19,7 +19,7 @@
     }
     checkAuth();
 
-    // Função para o botão de sair
+    // Função do Botão Sair
     async function handleLogout() {
       await supabase.auth.signOut();
       window.location.href = 'login.html';
@@ -42,11 +42,12 @@
         <button id="exportButton" class="button secondary" type="button">Exportar planilha</button>
         <button id="saveButton" class="button secondary" type="button">Salvar</button>
         <button id="themeToggleButton" class="button secondary" type="button">Dark mode</button>
-        <button onclick="handleLogout()" class="button secondary" type="button"
-          style="background: #ff4444; color: white; border: none;">Sair</button>
+        <button onclick="handleLogout()" class="button" type="button"
+          style="background: #ef4444; color: white; border: none;">Sair</button>
         <button id="nextYearTopButton" class="button" type="button">Proximo ano</button>
       </div>
     </header>
+
     <p id="saveStatus" class="save-status" role="status" aria-live="polite">Salvamento automatico ativo</p>
 
     <section class="summary" aria-label="Resumo financeiro">
@@ -126,7 +127,9 @@
         </div>
         <button class="icon-button" value="cancel" aria-label="Fechar" type="submit">x</button>
       </div>
-      <p class="muted">Importe CSV ou XLSX.</p>
+      <p class="muted">
+        Importe CSV ou XLSX. O sistema procura automaticamente nomes de categorias e valores por dia.
+      </p>
       <input id="fileInput" class="file-input" type="file" accept=".csv,.xlsx,.xls" />
       <div id="importPreview" class="preview"></div>
       <div class="modal-actions">
