@@ -5,10 +5,27 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Dashboard da Loja</title>
-  <link rel="stylesheet" href="styles.css?v=2" />
+  <link rel="stylesheet" href="styles.css?v=5" />
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="supabase-config.js"></script>
+  <script>
+    // TRAVA: Só mostra o site se estiver logado
+    async function validarAcesso() {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        window.location.replace('login.html');
+      }
+    }
+    validarAcesso();
+
+    async function sair() {
+      await supabase.auth.signOut();
+      window.location.href = 'login.html';
+    }
+  </script>
+
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js" defer></script>
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2" defer></script>
-  <script src="supabase-config.js" defer></script>
   <script src="imported-data.js" defer></script>
   <script src="app.js" defer></script>
 </head>
@@ -21,107 +38,21 @@
         <h1>Dashboard operacional</h1>
       </div>
       <div class="actions">
-        <button id="exportButton" class="button secondary" type="button">Exportar planilha</button>
-        <button id="saveButton" class="button secondary" type="button">Salvar</button>
-        <button id="themeToggleButton" class="button secondary" type="button">Dark mode</button>
-        <button id="nextYearTopButton" class="button" type="button">Proximo ano</button>
+        <button id="exportButton" class="button secondary">Exportar</button>
+        <button id="saveButton" class="button secondary">Salvar</button>
+        <button id="themeToggleButton" class="button secondary">Tema</button>
+        <button onclick="sair()" class="button"
+          style="background:#ff4444; color:white; border:none; cursor:pointer;">Sair</button>
       </div>
     </header>
-    <p id="saveStatus" class="save-status" role="status" aria-live="polite">Salvamento automatico ativo</p>
 
-    <section class="summary" aria-label="Resumo financeiro">
-      <article>
-        <span>Receita do mes</span>
-        <strong id="incomeTotal">R$ 0,00</strong>
-      </article>
-      <article>
-        <span>Gastos do mes</span>
-        <strong id="expenseTotal">R$ 0,00</strong>
-      </article>
-      <article>
-        <span>Resultado</span>
-        <strong id="profitTotal">R$ 0,00</strong>
-      </article>
+    <section class="summary">
+      <article><span>Receita</span><strong id="incomeTotal">R$ 0,00</strong></article>
+      <article><span>Gastos</span><strong id="expenseTotal">R$ 0,00</strong></article>
+      <article><span>Resultado</span><strong id="profitTotal">R$ 0,00</strong></article>
     </section>
 
-    <details class="yearly-panel">
-      <summary>
-        <span>Totais por ano</span>
-        <strong id="currentYearResult">R$ 0,00</strong>
-      </summary>
-      <div class="yearly-table-wrap">
-        <table class="yearly-table" aria-label="Totais anuais">
-          <thead>
-            <tr>
-              <th>Ano</th>
-              <th>Faturamento</th>
-              <th>Gastos</th>
-              <th>Resultado</th>
-            </tr>
-          </thead>
-          <tbody id="yearlyTotalsBody"></tbody>
-        </table>
-      </div>
-    </details>
-
-    <section class="controls" aria-label="Controles do dashboard">
-      <div class="segmented" role="tablist" aria-label="Tipo de lancamento">
-        <button class="segment active" type="button" data-ledger="income">Marketplaces</button>
-        <button class="segment" type="button" data-ledger="expense">Gastos</button>
-      </div>
-
-      <div class="year-control" aria-label="Navegacao de anos">
-        <button id="previousYearButton" class="icon-step" type="button" aria-label="Ano anterior">&lt;</button>
-        <label class="select-wrap">
-          <span>Ano</span>
-          <select id="yearSelect"></select>
-        </label>
-        <button id="nextYearButton" class="icon-step" type="button" aria-label="Proximo ano">&gt;</button>
-      </div>
-    </section>
-
-    <nav id="monthTabs" class="month-tabs" aria-label="Pastas mensais"></nav>
-
-    <section class="sheet-section">
-      <div class="sheet-heading">
-        <div>
-          <p id="sheetType" class="eyebrow">Marketplaces</p>
-          <h2 id="sheetTitle">Janeiro de 2024</h2>
-        </div>
-        <p id="calendarHint">31 dias no mes</p>
-      </div>
-
-      <div class="table-wrap">
-        <table id="dataTable" aria-label="Planilha mensal"></table>
-      </div>
-    </section>
   </main>
-
-  <dialog id="importDialog" class="modal">
-    <form method="dialog" class="modal-body">
-      <div class="modal-heading">
-        <div>
-          <p class="eyebrow">Importacao</p>
-          <h2>Atualizar pasta aberta</h2>
-        </div>
-        <button class="icon-button" value="cancel" aria-label="Fechar" type="submit">x</button>
-      </div>
-
-      <p class="muted">
-        Importe CSV ou XLSX. O sistema procura automaticamente nomes de categorias e valores por dia, usando a pasta,
-        mes e ano selecionados na tela.
-      </p>
-
-      <input id="fileInput" class="file-input" type="file" accept=".csv,.xlsx,.xls" />
-
-      <div id="importPreview" class="preview"></div>
-
-      <div class="modal-actions">
-        <button class="button secondary" value="cancel" type="submit">Cancelar</button>
-        <button id="applyImportButton" class="button" type="button" disabled>Aplicar importacao</button>
-      </div>
-    </form>
-  </dialog>
 </body>
 
 </html>
