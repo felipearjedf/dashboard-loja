@@ -278,9 +278,9 @@ function sheetKey(ledger, year, month) {
 }
 
 function getLedgerLabel(ledger) {
-  if (ledger === "income") return "Marketplaces";
-  if (ledger === "fixed") return "Custos fixos";
-  return "Gastos";
+  if (ledger === "income") return "Vendas";
+  if (ledger === "fixed") return "Custos";
+  return "Compras";
 }
 
 function isDescriptiveLedger(ledger) {
@@ -816,7 +816,7 @@ function exportWorkbook() {
   }
 
   const workbook = window.XLSX.utils.book_new();
-  const annualRows = [["Ano", "Faturamento", "Gastos", "Custos fixos", "Resultado"]];
+  const annualRows = [["Ano", "Faturamento", "Compras", "Custos", "Resultado"]];
 
   state.years.forEach((year) => {
     const annualIncome = getYearTotal("income", year);
@@ -828,7 +828,7 @@ function exportWorkbook() {
       for (let month = 0; month < 12; month += 1) {
         const rows = buildExportRows(ledger, year, month);
         const worksheet = window.XLSX.utils.aoa_to_sheet(rows);
-        const namePrefix = ledger === "income" ? "Receita" : ledger === "fixed" ? "Fixos" : "Gastos";
+        const namePrefix = ledger === "income" ? "Vendas" : ledger === "fixed" ? "Custos" : "Compras";
         window.XLSX.utils.book_append_sheet(workbook, worksheet, `${namePrefix} ${months[month].slice(0, 3)}-${year}`);
       }
     });
@@ -845,7 +845,7 @@ function exportHtmlWorkbook() {
   state.years.forEach((year) => {
     ledgerTypes.forEach((ledger) => {
       for (let month = 0; month < 12; month += 1) {
-        const title = `${ledger === "income" ? "Receita" : ledger === "fixed" ? "Custos fixos" : "Gastos"} - ${months[month]} de ${year}`;
+        const title = `${getLedgerLabel(ledger)} - ${months[month]} de ${year}`;
         sections.push(`<h1>${escapeHtml(title)}</h1>${rowsToHtmlTable(buildExportRows(ledger, year, month))}`);
       }
     });
@@ -871,7 +871,7 @@ function exportHtmlWorkbook() {
 }
 
 function buildAnnualExportRows() {
-  const rows = [["Ano", "Faturamento", "Gastos", "Custos fixos", "Resultado"]];
+  const rows = [["Ano", "Faturamento", "Compras", "Custos", "Resultado"]];
   state.years.forEach((year) => {
     const income = getYearTotal("income", year);
     const expense = getYearTotal("expense", year);

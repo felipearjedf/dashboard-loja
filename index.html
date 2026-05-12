@@ -18,7 +18,7 @@
     <header class="topbar">
       <div>
         <p class="eyebrow">Gestao da loja</p>
-        <h1>Dashboard operacional</h1>
+        <h1>Controle Palina</h1>
       </div>
       <div class="actions">
         <button id="exportButton" class="button secondary" type="button">Exportar planilha</button>
@@ -36,11 +36,11 @@
         <strong id="incomeTotal">R$ 0,00</strong>
       </article>
       <article>
-        <span>Gastos do mes</span>
+        <span>Compras do mes</span>
         <strong id="expenseTotal">R$ 0,00</strong>
       </article>
       <article>
-        <span>Custos fixos do mes</span>
+        <span>Custos do mes</span>
         <strong id="fixedTotal">R$ 0,00</strong>
       </article>
       <article>
@@ -60,8 +60,8 @@
             <tr>
               <th>Ano</th>
                 <th>Faturamento</th>
-                <th>Gastos</th>
-                <th>Custos fixos</th>
+                <th>Compras</th>
+                <th>Custos</th>
                 <th>Resultado</th>
             </tr>
           </thead>
@@ -72,9 +72,9 @@
 
     <section class="controls" aria-label="Controles do dashboard">
         <div class="segmented" role="tablist" aria-label="Tipo de lancamento">
-          <button class="segment active" type="button" data-ledger="income">Marketplaces</button>
-          <button class="segment" type="button" data-ledger="expense">Gastos</button>
-          <button class="segment" type="button" data-ledger="fixed">Custos fixos</button>
+          <button class="segment active" type="button" data-ledger="income">Vendas</button>
+          <button class="segment" type="button" data-ledger="expense">Compras</button>
+          <button class="segment" type="button" data-ledger="fixed">Custos</button>
         </div>
 
       <div class="year-control" aria-label="Navegacao de anos">
@@ -92,7 +92,7 @@
     <section class="sheet-section">
       <div class="sheet-heading">
         <div>
-          <p id="sheetType" class="eyebrow">Marketplaces</p>
+            <p id="sheetType" class="eyebrow">Vendas</p>
           <h2 id="sheetTitle">Janeiro de 2024</h2>
         </div>
         <p id="calendarHint">31 dias no mes</p>
