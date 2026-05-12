@@ -785,7 +785,7 @@ async function copySelectedCells(event) {
   if (!text) return;
   event.preventDefault();
   if (event.clipboardData) event.clipboardData.setData("text/plain", text);
-  else if (navigator.clipboard) await navigator.clipboard.writeText(text);
+  if (navigator.clipboard) await navigator.clipboard.writeText(text).catch(() => {});
 }
 
 function pasteCells(event) {
@@ -794,6 +794,40 @@ function pasteCells(event) {
   const text = event.clipboardData?.getData("text/plain");
   if (!text || !text.includes("\t") && !text.includes("\n")) return;
   event.preventDefault();
+  pasteTextAtSelection(text);
+}
+
+async function handleGridShortcuts(event) {
+  const isMod = event.ctrlKey || event.metaKey;
+  if (!isMod) return;
+
+  const key = event.key.toLowerCase();
+  if (key === "z") {
+    event.preventDefault();
+    undoLastChange();
+    return;
+  }
+
+  if (key === "c" && selectedRange) {
+    const text = getSelectedText();
+    if (!text) return;
+    event.preventDefault();
+    await navigator.clipboard?.writeText(text).catch(() => {});
+    elements.saveStatus.textContent = "Celulas copiadas.";
+    return;
+  }
+
+  if (key === "v" && document.activeElement?.matches?.(".cell-input")) {
+    const text = await navigator.clipboard?.readText().catch(() => "");
+    if (!text || (!text.includes("\t") && !text.includes("\n"))) return;
+    pasteTextAtSelection(text);
+    event.preventDefault();
+  }
+}
+
+function pasteTextAtSelection(text) {
+  const active = document.activeElement;
+  if (!active?.matches?.(".cell-input")) return;
   editSnapshot = null;
   pushUndoSnapshot();
 
@@ -1168,6 +1202,7 @@ elements.dataTable.addEventListener(
 );
 
 elements.dataTable.addEventListener("paste", pasteCells);
+elements.dataTable.addEventListener("keydown", handleGridShortcuts);
 document.addEventListener("copy", copySelectedCells);
 
 async function boot() {
