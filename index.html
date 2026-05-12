@@ -9,6 +9,17 @@
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js" defer></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2" defer></script>
   <script src="supabase-config.js" defer></script>
+  <script>
+    // Esta função verifica se você está logado antes de mostrar qualquer dado
+    async function verificarSeguranca() {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        // Se não houver login, ele te joga para a página de login
+        window.location.replace('login.html');
+      }
+    }
+    verificarSeguranca();
+  </script>
   <script src="imported-data.js" defer></script>
   <script src="app.js" defer></script>
 </head>
@@ -25,6 +36,11 @@
         <button id="saveButton" class="button secondary" type="button">Salvar</button>
         <button id="themeToggleButton" class="button secondary" type="button">Dark mode</button>
         <button id="nextYearTopButton" class="button" type="button">Proximo ano</button>
+        <div class="actions">
+          <button onclick="supabase.auth.signOut().then(() => window.location.href='login.html')" class="button"
+            style="background:#ff4444; color:white; border:none; cursor:pointer;">Sair</button>
+          <button id="nextYearTopButton" class="button" type="button">Proximo ano</button>
+        </div>
       </div>
     </header>
     <p id="saveStatus" class="save-status" role="status" aria-live="polite">Salvamento automatico ativo</p>
