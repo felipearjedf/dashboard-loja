@@ -9,18 +9,11 @@
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js" defer></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2" defer></script>
   <script src="supabase-config.js" defer></script>
-  <script>
-    window.SUPABASE_CONFIG = {
-      URL: "https://myzkzqlynzkyvnhzfjzs.supabase.co",
-      chaveAnonima: "sb_publishable_S-9XdSdh9hjQSqxPiBBBLg_8x63JpHF",
-      idRegistro: "loja-principal"
-    };
-  </script>
   <script src="imported-data.js" defer></script>
   <script src="app.js" defer></script>
 </head>
 
-<body>
+<body class="auth-checking">
   <main class="shell">
     <header class="topbar">
       <div>
@@ -31,6 +24,7 @@
         <button id="exportButton" class="button secondary" type="button">Exportar planilha</button>
         <button id="saveButton" class="button secondary" type="button">Salvar</button>
         <button id="themeToggleButton" class="button secondary" type="button">Dark mode</button>
+        <button id="logoutButton" class="button secondary" type="button">Sair</button>
         <button id="nextYearTopButton" class="button" type="button">Proximo ano</button>
       </div>
     </header>
@@ -44,6 +38,10 @@
       <article>
         <span>Gastos do mes</span>
         <strong id="expenseTotal">R$ 0,00</strong>
+      </article>
+      <article>
+        <span>Custos fixos do mes</span>
+        <strong id="fixedTotal">R$ 0,00</strong>
       </article>
       <article>
         <span>Resultado</span>
@@ -61,9 +59,10 @@
           <thead>
             <tr>
               <th>Ano</th>
-              <th>Faturamento</th>
-              <th>Gastos</th>
-              <th>Resultado</th>
+                <th>Faturamento</th>
+                <th>Gastos</th>
+                <th>Custos fixos</th>
+                <th>Resultado</th>
             </tr>
           </thead>
           <tbody id="yearlyTotalsBody"></tbody>
@@ -72,10 +71,11 @@
     </details>
 
     <section class="controls" aria-label="Controles do dashboard">
-      <div class="segmented" role="tablist" aria-label="Tipo de lancamento">
-        <button class="segment active" type="button" data-ledger="income">Marketplaces</button>
-        <button class="segment" type="button" data-ledger="expense">Gastos</button>
-      </div>
+        <div class="segmented" role="tablist" aria-label="Tipo de lancamento">
+          <button class="segment active" type="button" data-ledger="income">Marketplaces</button>
+          <button class="segment" type="button" data-ledger="expense">Gastos</button>
+          <button class="segment" type="button" data-ledger="fixed">Custos fixos</button>
+        </div>
 
       <div class="year-control" aria-label="Navegacao de anos">
         <button id="previousYearButton" class="icon-step" type="button" aria-label="Ano anterior">&lt;</button>

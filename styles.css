@@ -37,6 +37,10 @@ body {
   font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
 
+body.auth-checking main {
+  visibility: hidden;
+}
+
 button,
 input,
 select {
@@ -156,7 +160,7 @@ body.dark-mode .add-row-plus:hover {
 
 .summary {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 14px;
   margin-bottom: 16px;
 }
@@ -266,7 +270,7 @@ body.dark-mode .yearly-table .active-year td {
 
 .segmented {
   display: grid;
-  grid-template-columns: repeat(2, minmax(128px, 1fr));
+  grid-template-columns: repeat(3, minmax(128px, 1fr));
   gap: 4px;
   padding: 4px;
   border-radius: 8px;

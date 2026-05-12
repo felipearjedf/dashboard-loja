@@ -39,6 +39,21 @@ const defaultExpense = [
   "Outros"
 ];
 
+const defaultFixed = [
+  "Aluguel",
+  "Funcionario",
+  "Contabilidade",
+  "Internet",
+  "Energia",
+  "Sistema",
+  "Telefone",
+  "Seguro",
+  "Manutencao",
+  "Outros"
+];
+
+const ledgerTypes = ["income", "expense", "fixed"];
+
 const storeKey = "loja-saas-dashboard-v3";
 const themeKey = "loja-saas-dashboard-theme";
 const currency = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" });
@@ -49,7 +64,7 @@ let supabaseClient = createSupabaseClient();
 const cloudRecordId = window.SUPABASE_CONFIG?.recordId || "loja-principal";
 
 applySavedTheme();
-let state = loadState();
+let state;
 
 const elements = {
   applyImportButton: document.querySelector("#applyImportButton"),
@@ -58,10 +73,12 @@ const elements = {
   dataTable: document.querySelector("#dataTable"),
   expenseTotal: document.querySelector("#expenseTotal"),
   exportButton: document.querySelector("#exportButton"),
+  fixedTotal: document.querySelector("#fixedTotal"),
   fileInput: document.querySelector("#fileInput"),
   importDialog: document.querySelector("#importDialog"),
   importPreview: document.querySelector("#importPreview"),
   incomeTotal: document.querySelector("#incomeTotal"),
+  logoutButton: document.querySelector("#logoutButton"),
   monthTabs: document.querySelector("#monthTabs"),
   nextYearButton: document.querySelector("#nextYearButton"),
   nextYearTopButton: document.querySelector("#nextYearTopButton"),
@@ -107,6 +124,7 @@ function createSupabaseClient() {
 async function initCloudSync() {
   if (!supabaseClient) {
     elements.saveStatus.textContent = "Modo local ativo. Configure o Supabase para compartilhar online.";
+    document.body.classList.remove("auth-checking");
     return;
   }
 
@@ -134,6 +152,27 @@ async function initCloudSync() {
 
   await pushCloudState();
   elements.saveStatus.textContent = "Supabase conectado. Dados iniciais enviados para a nuvem.";
+}
+
+async function requireSession() {
+  if (!supabaseClient) {
+    document.body.classList.remove("auth-checking");
+    return true;
+  }
+
+  const { data, error } = await supabaseClient.auth.getSession();
+  if (error || !data.session) {
+    window.location.href = "login.html";
+    return false;
+  }
+
+  document.body.classList.remove("auth-checking");
+  return true;
+}
+
+async function logout() {
+  if (supabaseClient) await supabaseClient.auth.signOut();
+  window.location.href = "login.html";
 }
 
 function loadState() {
@@ -164,7 +203,7 @@ function ensureShape(input) {
     years: Array.isArray(input.years) ? input.years.filter((year) => year >= 2024) : [2024],
     currentYear: Number(input.currentYear) || 2024,
     currentMonth: Number(input.currentMonth) || 0,
-    currentLedger: input.currentLedger === "expense" ? "expense" : "income",
+    currentLedger: ledgerTypes.includes(input.currentLedger) ? input.currentLedger : "income",
     ledgers: input.ledgers && typeof input.ledgers === "object" ? input.ledgers : {},
     marketplaceTemplateApplied: Boolean(input.marketplaceTemplateApplied)
   };
@@ -174,7 +213,7 @@ function ensureShape(input) {
   next.years = [...new Set(next.years)].sort((a, b) => a - b);
 
   next.years.forEach((year) => {
-    ["income", "expense"].forEach((ledger) => {
+    ledgerTypes.forEach((ledger) => {
       for (let month = 0; month < 12; month += 1) {
         getSheet(next, ledger, year, month);
       }
@@ -192,7 +231,7 @@ function ensureShape(input) {
 function getSheet(source, ledger, year, month) {
   const key = sheetKey(ledger, year, month);
   if (!source.ledgers[key]) {
-    const defaults = ledger === "income" ? getMarketplaceTemplate(source) : defaultExpense;
+    const defaults = getDefaultCategories(source, ledger);
     source.ledgers[key] = {
       categories: defaults.slice(),
       values: Array.from({ length: 10 }, () => ({})),
@@ -209,6 +248,12 @@ function getSheet(source, ledger, year, month) {
   while (sheet.values.length < 10) sheet.values.push({});
   while (sheet.notes.length < sheet.categories.length) sheet.notes.push({});
   return sheet;
+}
+
+function getDefaultCategories(source, ledger) {
+  if (ledger === "income") return getMarketplaceTemplate(source);
+  if (ledger === "fixed") return defaultFixed;
+  return defaultExpense;
 }
 
 function getMarketplaceTemplate(source) {
@@ -230,6 +275,16 @@ function replicateMarketplaceCategories(source) {
 
 function sheetKey(ledger, year, month) {
   return `${ledger}-${year}-${month}`;
+}
+
+function getLedgerLabel(ledger) {
+  if (ledger === "income") return "Marketplaces";
+  if (ledger === "fixed") return "Custos fixos";
+  return "Gastos";
+}
+
+function isDescriptiveLedger(ledger) {
+  return ledger === "expense" || ledger === "fixed";
 }
 
 function daysInMonth(year, month) {
@@ -291,7 +346,7 @@ function formatInput(value) {
 }
 
 function getCellDisplayValue(sheet, ledger, rowIndex, day) {
-  if (ledger === "expense" && sheet.notes?.[rowIndex]?.[day]) {
+  if (isDescriptiveLedger(ledger) && sheet.notes?.[rowIndex]?.[day]) {
     return sheet.notes[rowIndex][day];
   }
   return formatInput(sheet.values[rowIndex][day]);
@@ -345,7 +400,7 @@ function renderTable() {
   const ledger = state.currentLedger;
   const days = daysInMonth(year, month);
   const sheet = getSheet(state, ledger, year, month);
-  const label = ledger === "income" ? "Marketplaces" : "Gastos";
+  const label = getLedgerLabel(ledger);
 
   elements.sheetType.textContent = label;
   elements.sheetTitle.textContent = `${months[month]} de ${year}`;
@@ -416,10 +471,12 @@ function renderTable() {
 function renderSummary() {
   const income = getMonthTotal("income", state.currentYear, state.currentMonth);
   const expense = getMonthTotal("expense", state.currentYear, state.currentMonth);
+  const fixed = getMonthTotal("fixed", state.currentYear, state.currentMonth);
   elements.incomeTotal.textContent = currency.format(income);
   elements.expenseTotal.textContent = currency.format(expense);
-  elements.profitTotal.textContent = currency.format(income - expense);
-  elements.profitTotal.style.color = income - expense < 0 ? "var(--danger)" : "var(--brand)";
+  elements.fixedTotal.textContent = currency.format(fixed);
+  elements.profitTotal.textContent = currency.format(income - expense - fixed);
+  elements.profitTotal.style.color = income - expense - fixed < 0 ? "var(--danger)" : "var(--brand)";
 }
 
 function getYearTotal(ledger, year) {
@@ -435,19 +492,24 @@ function renderYearlyTotals() {
     .map((year) => {
       const income = getYearTotal("income", year);
       const expense = getYearTotal("expense", year);
-      const result = income - expense;
+      const fixed = getYearTotal("fixed", year);
+      const result = income - expense - fixed;
       return `
         <tr class="${year === state.currentYear ? "active-year" : ""}">
           <td>${year}</td>
           <td>${currency.format(income)}</td>
           <td>${currency.format(expense)}</td>
+          <td>${currency.format(fixed)}</td>
           <td class="${result < 0 ? "negative" : "positive"}">${currency.format(result)}</td>
         </tr>
       `;
     })
     .join("");
 
-  const currentResult = getYearTotal("income", state.currentYear) - getYearTotal("expense", state.currentYear);
+  const currentResult =
+    getYearTotal("income", state.currentYear) -
+    getYearTotal("expense", state.currentYear) -
+    getYearTotal("fixed", state.currentYear);
   elements.yearlyTotalsBody.innerHTML = rows;
   elements.currentYearResult.textContent = `${state.currentYear}: ${currency.format(currentResult)}`;
   elements.currentYearResult.style.color = currentResult < 0 ? "var(--danger)" : "var(--brand)";
@@ -483,7 +545,7 @@ function updateCell(input) {
   const row = Number(input.dataset.row);
   const day = Number(input.dataset.day);
   sheet.values[row][day] = parseValue(input.value);
-  if (state.currentLedger === "expense") sheet.notes[row][day] = input.value.trim();
+  if (isDescriptiveLedger(state.currentLedger)) sheet.notes[row][day] = input.value.trim();
   saveState();
   renderTable();
   renderSummary();
@@ -495,7 +557,7 @@ function saveCellDraft(input) {
   const row = Number(input.dataset.row);
   const day = Number(input.dataset.day);
   sheet.values[row][day] = parseValue(input.value);
-  if (state.currentLedger === "expense") sheet.notes[row][day] = input.value.trim();
+  if (isDescriptiveLedger(state.currentLedger)) sheet.notes[row][day] = input.value.trim();
   saveState();
   refreshDisplayedTotals();
   renderSummary();
@@ -540,10 +602,10 @@ function setCategoryName(rowIndex, value) {
   const fallback = `Linha ${rowIndex + 1}`;
   const name = value.trim() || fallback;
 
-  if (state.currentLedger === "income") {
+  if (state.currentLedger === "income" || state.currentLedger === "fixed") {
     state.years.forEach((year) => {
       for (let month = 0; month < 12; month += 1) {
-        getSheet(state, "income", year, month).categories[rowIndex] = name;
+        getSheet(state, state.currentLedger, year, month).categories[rowIndex] = name;
       }
     });
     return;
@@ -553,11 +615,12 @@ function setCategoryName(rowIndex, value) {
 }
 
 function addRowAtEnd() {
-  if (state.currentLedger === "income") {
+  if (state.currentLedger === "income" || state.currentLedger === "fixed") {
     state.years.forEach((year) => {
       for (let month = 0; month < 12; month += 1) {
-        const sheet = getSheet(state, "income", year, month);
-        sheet.categories.push(`Novo marketplace ${sheet.categories.length + 1}`);
+        const sheet = getSheet(state, state.currentLedger, year, month);
+        const prefix = state.currentLedger === "income" ? "Novo marketplace" : "Novo custo fixo";
+        sheet.categories.push(`${prefix} ${sheet.categories.length + 1}`);
         sheet.values.push({});
         sheet.notes.push({});
       }
@@ -579,10 +642,10 @@ function deleteRow(rowIndex) {
   const confirmed = window.confirm(`Excluir "${rowName}"? Os valores dessa linha tambem serao apagados.`);
   if (!confirmed) return;
 
-  if (state.currentLedger === "income") {
+  if (state.currentLedger === "income" || state.currentLedger === "fixed") {
     state.years.forEach((year) => {
       for (let month = 0; month < 12; month += 1) {
-        const targetSheet = getSheet(state, "income", year, month);
+        const targetSheet = getSheet(state, state.currentLedger, year, month);
         if (targetSheet.categories.length <= 1) return;
         targetSheet.categories.splice(rowIndex, 1);
         targetSheet.values.splice(rowIndex, 1);
@@ -753,18 +816,19 @@ function exportWorkbook() {
   }
 
   const workbook = window.XLSX.utils.book_new();
-  const annualRows = [["Ano", "Faturamento", "Gastos", "Resultado"]];
+  const annualRows = [["Ano", "Faturamento", "Gastos", "Custos fixos", "Resultado"]];
 
   state.years.forEach((year) => {
     const annualIncome = getYearTotal("income", year);
     const annualExpense = getYearTotal("expense", year);
-    annualRows.push([year, annualIncome, annualExpense, annualIncome - annualExpense]);
+    const annualFixed = getYearTotal("fixed", year);
+    annualRows.push([year, annualIncome, annualExpense, annualFixed, annualIncome - annualExpense - annualFixed]);
 
-    ["income", "expense"].forEach((ledger) => {
+    ledgerTypes.forEach((ledger) => {
       for (let month = 0; month < 12; month += 1) {
         const rows = buildExportRows(ledger, year, month);
         const worksheet = window.XLSX.utils.aoa_to_sheet(rows);
-        const namePrefix = ledger === "income" ? "Receita" : "Gastos";
+        const namePrefix = ledger === "income" ? "Receita" : ledger === "fixed" ? "Fixos" : "Gastos";
         window.XLSX.utils.book_append_sheet(workbook, worksheet, `${namePrefix} ${months[month].slice(0, 3)}-${year}`);
       }
     });
@@ -779,9 +843,9 @@ function exportHtmlWorkbook() {
   sections.push(`<h1>Totais por ano</h1>${rowsToHtmlTable(buildAnnualExportRows())}`);
 
   state.years.forEach((year) => {
-    ["income", "expense"].forEach((ledger) => {
+    ledgerTypes.forEach((ledger) => {
       for (let month = 0; month < 12; month += 1) {
-        const title = `${ledger === "income" ? "Receita" : "Gastos"} - ${months[month]} de ${year}`;
+        const title = `${ledger === "income" ? "Receita" : ledger === "fixed" ? "Custos fixos" : "Gastos"} - ${months[month]} de ${year}`;
         sections.push(`<h1>${escapeHtml(title)}</h1>${rowsToHtmlTable(buildExportRows(ledger, year, month))}`);
       }
     });
@@ -807,11 +871,12 @@ function exportHtmlWorkbook() {
 }
 
 function buildAnnualExportRows() {
-  const rows = [["Ano", "Faturamento", "Gastos", "Resultado"]];
+  const rows = [["Ano", "Faturamento", "Gastos", "Custos fixos", "Resultado"]];
   state.years.forEach((year) => {
     const income = getYearTotal("income", year);
     const expense = getYearTotal("expense", year);
-    rows.push([year, income, expense, income - expense]);
+    const fixed = getYearTotal("fixed", year);
+    rows.push([year, income, expense, fixed, income - expense - fixed]);
   });
   return rows;
 }
@@ -844,7 +909,7 @@ function downloadBlob(content, filename, type) {
 function buildExportRows(ledger, year, month) {
   const sheet = getSheet(state, ledger, year, month);
   const days = daysInMonth(year, month);
-  const label = ledger === "income" ? "Marketplaces" : "Gastos";
+  const label = getLedgerLabel(ledger);
   const rows = [[label, ...Array.from({ length: days }, (_, index) => index + 1), "Total"]];
   const dailyTotals = Array.from({ length: days }, () => 0);
   let monthTotal = 0;
@@ -854,7 +919,7 @@ function buildExportRows(ledger, year, month) {
     let rowTotal = 0;
     for (let day = 1; day <= days; day += 1) {
       const value = Number(sheet.values[rowIndex][day] || 0);
-      values.push(ledger === "expense" && sheet.notes?.[rowIndex]?.[day] ? sheet.notes[rowIndex][day] : value || "");
+      values.push(isDescriptiveLedger(ledger) && sheet.notes?.[rowIndex]?.[day] ? sheet.notes[rowIndex][day] : value || "");
       dailyTotals[day - 1] += value;
       rowTotal += value;
     }
@@ -872,6 +937,7 @@ elements.previousYearButton.addEventListener("click", goToPreviousYear);
 elements.exportButton.addEventListener("click", exportWorkbook);
 elements.saveButton.addEventListener("click", manualSave);
 elements.themeToggleButton.addEventListener("click", toggleTheme);
+elements.logoutButton.addEventListener("click", logout);
 elements.applyImportButton.addEventListener("click", applyImport);
 elements.fileInput.addEventListener("change", (event) => readImport(event.target.files[0]));
 
@@ -925,5 +991,12 @@ elements.dataTable.addEventListener(
   true
 );
 
-render();
-initCloudSync();
+async function boot() {
+  const allowed = await requireSession();
+  if (!allowed) return;
+  state = loadState();
+  render();
+  initCloudSync();
+}
+
+boot();
