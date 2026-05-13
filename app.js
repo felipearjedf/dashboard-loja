@@ -53,6 +53,11 @@ const defaultFixed = [
 ];
 
 const ledgerTypes = ["income", "expense", "fixed"];
+const creditCardFees = {
+  "1x": 0.0433,
+  "2x": 0.0568,
+  "3x": 0.0663
+};
 
 const storeKey = "loja-saas-dashboard-v3";
 const themeKey = "loja-saas-dashboard-theme";
@@ -68,6 +73,7 @@ let selectedRange = null;
 let lastSelectedCell = null;
 let draggedRowIndex = null;
 let isSelectingCells = false;
+let showNetIncomeSummary = false;
 
 applySavedTheme();
 let state;
@@ -394,7 +400,25 @@ function getCellDisplayValue(sheet, ledger, rowIndex, day) {
   return formatInput(sheet.values[rowIndex][day]);
 }
 
+function getNetValue(ledger, category, value) {
+  const amount = Number(value || 0);
+  if (ledger !== "income") return amount;
+  const fee = creditCardFees[normalizeText(category)];
+  return fee ? amount * (1 - fee) : amount;
+}
+
 function getMonthTotal(ledger, year, month) {
+  const sheet = getSheet(state, ledger, year, month);
+  const days = daysInMonth(year, month);
+  return sheet.values.reduce((total, row, rowIndex) => {
+    for (let day = 1; day <= days; day += 1) {
+      total += getNetValue(ledger, sheet.categories[rowIndex], row[day]);
+    }
+    return total;
+  }, 0);
+}
+
+function getMonthGrossTotal(ledger, year, month) {
   const sheet = getSheet(state, ledger, year, month);
   const days = daysInMonth(year, month);
   return sheet.values.reduce((total, row) => {
@@ -453,7 +477,7 @@ function renderTable() {
   const bodyRows = sheet.categories
     .map((category, rowIndex) => {
       const row = sheet.values[rowIndex];
-      const rowTotal = Array.from({ length: days }, (_, index) => Number(row[index + 1] || 0)).reduce((a, b) => a + b, 0);
+      const rowTotal = Array.from({ length: days }, (_, index) => getNetValue(ledger, category, row[index + 1])).reduce((a, b) => a + b, 0);
       const cells = Array.from({ length: days }, (_, index) => {
         const day = index + 1;
         return `<td><input class="cell-input" inputmode="decimal" aria-label="${category} dia ${day}" data-row="${rowIndex}" data-day="${day}" value="${escapeHtml(getCellDisplayValue(sheet, ledger, rowIndex, day))}" /></td>`;
@@ -477,12 +501,12 @@ function renderTable() {
 
   const totals = Array.from({ length: days }, (_, index) => {
     const day = index + 1;
-    const total = sheet.values.reduce((sum, row) => sum + Number(row[day] || 0), 0);
+    const total = sheet.values.reduce((sum, row, rowIndex) => sum + getNetValue(ledger, sheet.categories[rowIndex], row[day]), 0);
     return `<td class="grand-total" data-day-total="${day}">${currency.format(total)}</td>`;
   }).join("");
 
-  const grandTotal = sheet.values.reduce((sum, row) => {
-    for (let day = 1; day <= days; day += 1) sum += Number(row[day] || 0);
+  const grandTotal = sheet.values.reduce((sum, row, rowIndex) => {
+    for (let day = 1; day <= days; day += 1) sum += getNetValue(ledger, sheet.categories[rowIndex], row[day]);
     return sum;
   }, 0);
 
@@ -513,14 +537,30 @@ function renderTable() {
 }
 
 function renderSummary() {
-  const income = getMonthTotal("income", state.currentYear, state.currentMonth);
+  const grossIncome = getMonthGrossTotal("income", state.currentYear, state.currentMonth);
+  const netIncome = getMonthTotal("income", state.currentYear, state.currentMonth);
   const expense = getMonthTotal("expense", state.currentYear, state.currentMonth);
   const fixed = getMonthTotal("fixed", state.currentYear, state.currentMonth);
-  elements.incomeTotal.textContent = currency.format(income);
+  const displayedIncome = showNetIncomeSummary ? netIncome : grossIncome;
+  elements.incomeTotal.textContent = currency.format(displayedIncome);
+  elements.incomeTotal.parentElement.classList.toggle("summary-clickable", true);
+  elements.incomeTotal.parentElement.setAttribute(
+    "title",
+    showNetIncomeSummary ? "Receita liquida. Clique para ver receita cheia." : "Receita cheia. Clique para ver receita liquida."
+  );
+  elements.incomeTotal.parentElement.setAttribute(
+    "aria-label",
+    showNetIncomeSummary ? "Receita liquida do mes" : "Receita cheia do mes"
+  );
   elements.expenseTotal.textContent = currency.format(expense);
   elements.fixedTotal.textContent = currency.format(fixed);
-  elements.profitTotal.textContent = currency.format(income - expense - fixed);
-  elements.profitTotal.style.color = income - expense - fixed < 0 ? "var(--danger)" : "var(--brand)";
+  elements.profitTotal.textContent = currency.format(netIncome - expense - fixed);
+  elements.profitTotal.style.color = netIncome - expense - fixed < 0 ? "var(--danger)" : "var(--brand)";
+}
+
+function toggleIncomeSummaryMode() {
+  showNetIncomeSummary = !showNetIncomeSummary;
+  renderSummary();
 }
 
 function getYearTotal(ledger, year) {
@@ -615,14 +655,14 @@ function refreshDisplayedTotals() {
 
   sheet.values.forEach((row, rowIndex) => {
     let rowTotal = 0;
-    for (let day = 1; day <= days; day += 1) rowTotal += Number(row[day] || 0);
+    for (let day = 1; day <= days; day += 1) rowTotal += getNetValue(state.currentLedger, sheet.categories[rowIndex], row[day]);
     monthTotal += rowTotal;
     const rowTotalCell = elements.dataTable.querySelector(`[data-row-total="${rowIndex}"]`);
     if (rowTotalCell) rowTotalCell.textContent = currency.format(rowTotal);
   });
 
   for (let day = 1; day <= days; day += 1) {
-    const dayTotal = sheet.values.reduce((sum, row) => sum + Number(row[day] || 0), 0);
+    const dayTotal = sheet.values.reduce((sum, row, rowIndex) => sum + getNetValue(state.currentLedger, sheet.categories[rowIndex], row[day]), 0);
     const dayTotalCell = elements.dataTable.querySelector(`[data-day-total="${day}"]`);
     if (dayTotalCell) dayTotalCell.textContent = currency.format(dayTotal);
   }
@@ -1182,9 +1222,10 @@ function buildExportRows(ledger, year, month) {
     let rowTotal = 0;
     for (let day = 1; day <= days; day += 1) {
       const value = Number(sheet.values[rowIndex][day] || 0);
+      const netValue = getNetValue(ledger, category, value);
       values.push(isDescriptiveLedger(ledger) && sheet.notes?.[rowIndex]?.[day] ? sheet.notes[rowIndex][day] : value || "");
-      dailyTotals[day - 1] += value;
-      rowTotal += value;
+      dailyTotals[day - 1] += netValue;
+      rowTotal += netValue;
     }
     monthTotal += rowTotal;
     rows.push([category, ...values, rowTotal]);
@@ -1202,6 +1243,7 @@ elements.saveButton.addEventListener("click", manualSave);
 elements.themeToggleButton.addEventListener("click", toggleTheme);
 elements.logoutButton.addEventListener("click", logout);
 elements.undoButton.addEventListener("click", undoLastChange);
+elements.incomeTotal.parentElement.addEventListener("click", toggleIncomeSummaryMode);
 elements.applyImportButton.addEventListener("click", applyImport);
 elements.fileInput.addEventListener("change", (event) => readImport(event.target.files[0]));
 

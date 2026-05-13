@@ -179,6 +179,14 @@ body.dark-mode .add-row-plus:hover {
   box-shadow: var(--shadow);
 }
 
+.summary article.summary-clickable {
+  cursor: pointer;
+}
+
+.summary article.summary-clickable:hover {
+  border-color: var(--brand);
+}
+
 .summary span {
   display: block;
   color: var(--muted);
