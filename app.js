@@ -380,6 +380,16 @@ function parseValue(value) {
   if (typeof value === "number") return Number.isFinite(value) ? value : 0;
   if (!value) return 0;
 
+  const formula = normalizeFormulaValue(value);
+  if (formula) {
+    try {
+      const result = Function(`"use strict"; return (${formula});`)();
+      return Number.isFinite(result) ? result : 0;
+    } catch {
+      return 0;
+    }
+  }
+
   const normalized = String(value)
     .replace(/[^\d,.-]/g, "")
     .replace(/\.(?=\d{3}(?:\D|$))/g, "")
@@ -387,6 +397,22 @@ function parseValue(value) {
 
   const parsed = Number.parseFloat(normalized);
   return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function normalizeFormulaValue(value) {
+  const text = String(value || "").trim().replace(/=$/, "").trim();
+  if (!/[+\-*/()]/.test(text)) return "";
+  if (!/^[\d\s,.\-+*/()]+$/.test(text)) return "";
+
+  return text.replace(/\d[\d.,]*/g, (number) =>
+    number
+      .replace(/\.(?=\d{3}(?:\D|$))/g, "")
+      .replace(",", ".")
+  );
+}
+
+function isFormulaValue(value) {
+  return Boolean(normalizeFormulaValue(value));
 }
 
 function formatInput(value) {
@@ -628,8 +654,12 @@ function updateCell(input) {
   const sheet = getSheet(state, state.currentLedger, state.currentYear, state.currentMonth);
   const row = Number(input.dataset.row);
   const day = Number(input.dataset.day);
-  sheet.values[row][day] = parseValue(input.value);
-  if (isDescriptiveLedger(state.currentLedger)) sheet.notes[row][day] = input.value.trim();
+  const rawValue = input.value;
+  const value = parseValue(rawValue);
+  sheet.values[row][day] = value;
+  if (isDescriptiveLedger(state.currentLedger)) {
+    sheet.notes[row][day] = isFormulaValue(rawValue) ? formatInput(value) : rawValue.trim();
+  }
   saveState();
   renderTable();
   renderSummary();
@@ -911,6 +941,13 @@ function pasteCells(event) {
 }
 
 async function handleGridShortcuts(event) {
+  if (event.key === "Enter" && event.target.matches(".cell-input")) {
+    event.preventDefault();
+    updateCell(event.target);
+    event.target.blur();
+    return;
+  }
+
   const isMod = event.ctrlKey || event.metaKey;
   if (!isMod) return;
 
