@@ -248,7 +248,8 @@ function getSheet(source, ledger, year, month) {
     source.ledgers[key] = {
       categories: defaults.slice(),
       values: Array.from({ length: 10 }, () => ({})),
-      notes: Array.from({ length: 10 }, () => ({}))
+      notes: Array.from({ length: 10 }, () => ({})),
+      formulas: Array.from({ length: 10 }, () => ({}))
     };
   }
 
@@ -257,6 +258,8 @@ function getSheet(source, ledger, year, month) {
   while (sheet.values.length < sheet.categories.length) sheet.values.push({});
   if (!Array.isArray(sheet.notes)) sheet.notes = [];
   while (sheet.notes.length < sheet.categories.length) sheet.notes.push({});
+  if (!Array.isArray(sheet.formulas)) sheet.formulas = [];
+  while (sheet.formulas.length < sheet.categories.length) sheet.formulas.push({});
   return sheet;
 }
 
@@ -420,6 +423,9 @@ function formatInput(value) {
 }
 
 function getCellDisplayValue(sheet, ledger, rowIndex, day) {
+  if (sheet.formulas?.[rowIndex]?.[day]) {
+    return formatInput(sheet.values[rowIndex][day]);
+  }
   if (isDescriptiveLedger(ledger) && sheet.notes?.[rowIndex]?.[day]) {
     return sheet.notes[rowIndex][day];
   }
@@ -657,6 +663,11 @@ function updateCell(input) {
   const rawValue = input.value;
   const value = parseValue(rawValue);
   sheet.values[row][day] = value;
+  if (isFormulaValue(rawValue)) {
+    sheet.formulas[row][day] = rawValue.trim().replace(/=$/, "").trim();
+  } else {
+    delete sheet.formulas[row][day];
+  }
   if (isDescriptiveLedger(state.currentLedger)) {
     sheet.notes[row][day] = isFormulaValue(rawValue) ? formatInput(value) : rawValue.trim();
   }
@@ -670,8 +681,17 @@ function saveCellDraft(input) {
   const sheet = getSheet(state, state.currentLedger, state.currentYear, state.currentMonth);
   const row = Number(input.dataset.row);
   const day = Number(input.dataset.day);
-  sheet.values[row][day] = parseValue(input.value);
-  if (isDescriptiveLedger(state.currentLedger)) sheet.notes[row][day] = input.value.trim();
+  const rawValue = input.value;
+  const value = parseValue(rawValue);
+  sheet.values[row][day] = value;
+  if (isFormulaValue(rawValue)) {
+    sheet.formulas[row][day] = rawValue.trim().replace(/=$/, "").trim();
+  } else {
+    delete sheet.formulas[row][day];
+  }
+  if (isDescriptiveLedger(state.currentLedger)) {
+    sheet.notes[row][day] = isFormulaValue(rawValue) ? formatInput(value) : rawValue.trim();
+  }
   saveState();
   refreshDisplayedTotals();
   renderSummary();
@@ -738,6 +758,7 @@ function addRowAtEnd() {
         sheet.categories.push(`${prefix} ${sheet.categories.length + 1}`);
         sheet.values.push({});
         sheet.notes.push({});
+        sheet.formulas.push({});
       }
     });
   } else {
@@ -745,6 +766,7 @@ function addRowAtEnd() {
     sheet.categories.push(`Novo gasto ${sheet.categories.length + 1}`);
     sheet.values.push({});
     sheet.notes.push({});
+    sheet.formulas.push({});
   }
 
   saveState();
@@ -765,12 +787,14 @@ function deleteRow(rowIndex) {
         targetSheet.categories.splice(rowIndex, 1);
         targetSheet.values.splice(rowIndex, 1);
         targetSheet.notes.splice(rowIndex, 1);
+        targetSheet.formulas.splice(rowIndex, 1);
       }
     });
   } else {
     sheet.categories.splice(rowIndex, 1);
     sheet.values.splice(rowIndex, 1);
     sheet.notes.splice(rowIndex, 1);
+    sheet.formulas.splice(rowIndex, 1);
   }
 
   saveState();
@@ -798,7 +822,7 @@ function moveRow(rowIndex, targetIndex) {
 }
 
 function moveRowInSheet(sheet, from, to) {
-  ["categories", "values", "notes"].forEach((key) => {
+  ["categories", "values", "notes", "formulas"].forEach((key) => {
     const list = sheet[key];
     const [item] = list.splice(from, 1);
     list.splice(to, 0, item);
@@ -908,6 +932,54 @@ function paintSelection() {
   });
 }
 
+function revealCellFormula(input) {
+  const sheet = getSheet(state, state.currentLedger, state.currentYear, state.currentMonth);
+  const row = Number(input.dataset.row);
+  const day = Number(input.dataset.day);
+  const formula = sheet.formulas?.[row]?.[day];
+  if (formula) input.value = formula;
+}
+
+function focusCell(row, day, extend = false) {
+  const target = elements.dataTable.querySelector(`.cell-input[data-row="${row}"][data-day="${day}"]`);
+  if (!target) return false;
+  target.focus({ preventScroll: true });
+  selectCell(target, extend);
+  return true;
+}
+
+function moveCellFocus(input, key, extend = false) {
+  const row = Number(input.dataset.row);
+  const day = Number(input.dataset.day);
+  const moves = {
+    ArrowUp: [-1, 0],
+    ArrowDown: [1, 0],
+    ArrowLeft: [0, -1],
+    ArrowRight: [0, 1]
+  };
+  const move = moves[key];
+  if (!move) return false;
+  return focusCell(row + move[0], day + move[1], extend);
+}
+
+function clearSelectedCells() {
+  if (!selectedRange) return;
+  const sheet = getSheet(state, state.currentLedger, state.currentYear, state.currentMonth);
+  pushUndoSnapshot();
+
+  for (let row = selectedRange.startRow; row <= selectedRange.endRow; row += 1) {
+    if (!sheet.values[row]) continue;
+    for (let day = selectedRange.startDay; day <= selectedRange.endDay; day += 1) {
+      sheet.values[row][day] = 0;
+      if (sheet.notes?.[row]) delete sheet.notes[row][day];
+      if (sheet.formulas?.[row]) delete sheet.formulas[row][day];
+    }
+  }
+
+  saveState();
+  render();
+}
+
 function getSelectedText() {
   if (!selectedRange) return "";
   const sheet = getSheet(state, state.currentLedger, state.currentYear, state.currentMonth);
@@ -941,11 +1013,28 @@ function pasteCells(event) {
 }
 
 async function handleGridShortcuts(event) {
+  if (!event.target.matches(".cell-input")) {
+    return;
+  }
+
   if (event.key === "Enter" && event.target.matches(".cell-input")) {
     event.preventDefault();
     updateCell(event.target);
     event.target.blur();
     return;
+  }
+
+  if (event.key === "Delete" || event.key === "Backspace") {
+    event.preventDefault();
+    clearSelectedCells();
+    return;
+  }
+
+  if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(event.key)) {
+    if (moveCellFocus(event.target, event.key, event.shiftKey)) {
+      event.preventDefault();
+      return;
+    }
   }
 
   const isMod = event.ctrlKey || event.metaKey;
@@ -993,8 +1082,16 @@ function pasteTextAtSelection(text) {
     cells.forEach((cell, dayOffset) => {
       const targetDay = startDay + dayOffset;
       if (targetDay > days) return;
-      sheet.values[targetRow][targetDay] = parseValue(cell);
-      if (isDescriptiveLedger(state.currentLedger)) sheet.notes[targetRow][targetDay] = cell.trim();
+      const value = parseValue(cell);
+      sheet.values[targetRow][targetDay] = value;
+      if (isFormulaValue(cell)) {
+        sheet.formulas[targetRow][targetDay] = cell.trim().replace(/=$/, "").trim();
+      } else {
+        delete sheet.formulas[targetRow][targetDay];
+      }
+      if (isDescriptiveLedger(state.currentLedger)) {
+        sheet.notes[targetRow][targetDay] = isFormulaValue(cell) ? formatInput(value) : cell.trim();
+      }
     });
   });
 
@@ -1343,7 +1440,10 @@ elements.dataTable.addEventListener("dragend", handleRowDragEnd);
 
 elements.dataTable.addEventListener("focusin", (event) => {
   if (event.target.matches(".cell-input") || event.target.matches(".category-input")) beginEdit();
-  if (event.target.matches(".cell-input")) selectCell(event.target, false);
+  if (event.target.matches(".cell-input")) {
+    selectCell(event.target, false);
+    revealCellFormula(event.target);
+  }
 });
 
 elements.dataTable.addEventListener("input", (event) => {
