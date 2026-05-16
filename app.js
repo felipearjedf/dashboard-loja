@@ -74,6 +74,7 @@ let lastSelectedCell = null;
 let draggedRowIndex = null;
 let isSelectingCells = false;
 let showNetIncomeSummary = false;
+let isNavigatingCells = false;
 
 applySavedTheme();
 let state;
@@ -698,6 +699,28 @@ function saveCellDraft(input) {
   renderYearlyTotals();
 }
 
+function commitCellWithoutRender(input) {
+  const sheet = getSheet(state, state.currentLedger, state.currentYear, state.currentMonth);
+  const row = Number(input.dataset.row);
+  const day = Number(input.dataset.day);
+  const rawValue = input.value;
+  const value = parseValue(rawValue);
+  sheet.values[row][day] = value;
+  if (isFormulaValue(rawValue)) {
+    sheet.formulas[row][day] = rawValue.trim().replace(/=$/, "").trim();
+  } else {
+    delete sheet.formulas[row][day];
+  }
+  if (isDescriptiveLedger(state.currentLedger)) {
+    sheet.notes[row][day] = isFormulaValue(rawValue) ? formatInput(value) : rawValue.trim();
+  }
+  input.value = getCellDisplayValue(sheet, state.currentLedger, row, day);
+  saveState();
+  refreshDisplayedTotals();
+  renderSummary();
+  renderYearlyTotals();
+}
+
 function refreshDisplayedTotals() {
   const sheet = getSheet(state, state.currentLedger, state.currentYear, state.currentMonth);
   const days = daysInMonth(state.currentYear, state.currentMonth);
@@ -943,8 +966,12 @@ function revealCellFormula(input) {
 function focusCell(row, day, extend = false) {
   const target = elements.dataTable.querySelector(`.cell-input[data-row="${row}"][data-day="${day}"]`);
   if (!target) return false;
+  isNavigatingCells = true;
   target.focus({ preventScroll: true });
   selectCell(target, extend);
+  window.setTimeout(() => {
+    isNavigatingCells = false;
+  }, 0);
   return true;
 }
 
@@ -959,6 +986,7 @@ function moveCellFocus(input, key, extend = false) {
   };
   const move = moves[key];
   if (!move) return false;
+  commitCellWithoutRender(input);
   return focusCell(row + move[0], day + move[1], extend);
 }
 
@@ -1456,6 +1484,7 @@ elements.dataTable.addEventListener(
   (event) => {
     if (event.target.matches(".cell-input") || event.target.matches(".category-input")) {
       finishEdit();
+      if (isNavigatingCells) return;
       render();
     }
   },
