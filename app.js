@@ -978,6 +978,8 @@ function focusCell(row, day, extend = false) {
 function moveCellFocus(input, key, extend = false) {
   const row = Number(input.dataset.row);
   const day = Number(input.dataset.day);
+  const sheet = getSheet(state, state.currentLedger, state.currentYear, state.currentMonth);
+  const days = daysInMonth(state.currentYear, state.currentMonth);
   const moves = {
     ArrowUp: [-1, 0],
     ArrowDown: [1, 0],
@@ -986,8 +988,17 @@ function moveCellFocus(input, key, extend = false) {
   };
   const move = moves[key];
   if (!move) return false;
+  const nextRow = row + move[0];
+  const nextDay = day + move[1];
+  if (nextRow < 0 || nextRow >= sheet.categories.length || nextDay < 1 || nextDay > days) return false;
+
+  isNavigatingCells = true;
   commitCellWithoutRender(input);
-  return focusCell(row + move[0], day + move[1], extend);
+  render();
+  window.setTimeout(() => {
+    focusCell(nextRow, nextDay, extend);
+  }, 0);
+  return true;
 }
 
 function clearSelectedCells() {
